@@ -2,8 +2,8 @@ import torch
 import random
 import numpy as np
 import os
-from executor import TaskExecutor
-from plotting_utils import plot_results
+from core.executor import TaskExecutor
+from utils.plotting_utils import plot_results
 
 config = {}
 def set_seeds(seed_value: int, device_type: str):
@@ -11,7 +11,6 @@ def set_seeds(seed_value: int, device_type: str):
     np.random.seed(seed_value)
     torch.manual_seed(seed_value)
     if device_type == 'cuda':
-        print("Setting CUDA seeds and options for reproducibility")
         torch.cuda.manual_seed_all(seed_value)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
@@ -45,20 +44,14 @@ def main():
 
     all_experiment_results = []
 
-    print(f"Using backbone: {BACKBONE_TO_USE}")
-    print(f"Device: {base_run_config['device']}")
-    print(f"Max Training Episodes per dataset: {MAX_N_TRAIN_EPISODES}")
-    print(f"Evaluation Tasks per dataset: {N_EVALUATION_TASKS}")
-    print(f"Early Stopping: Interval={EVALUATION_INTERVAL} episodes, Patience={EARLY_STOPPING_PATIENCE}.")
+    print(f"Starting experiments - Device: {base_run_config['device']}, Backbone: {BACKBONE_TO_USE}")
 
     for dataset_name in DATASET_NAMES:
         current_dataset_path = os.path.join(BASE_DATASET_PATH, dataset_name)
-        print(f"\n-- Processing Dataset: {dataset_name} --")
-        print(f"Dataset path: {current_dataset_path}")
-
+        print(f"\nProcessing dataset: {dataset_name}")
+        
         run_specific_config = base_run_config.copy()
         run_specific_config['dataset_path'] = current_dataset_path        
-        print(f"\n-- Starting Experiment for {dataset_name}: Max Training Episodes: {MAX_N_TRAIN_EPISODES}, Backbone: {BACKBONE_TO_USE} --")
         
         executor = TaskExecutor(
             run_config=run_specific_config,
@@ -84,8 +77,9 @@ def main():
             result['requested_episodes'] = MAX_N_TRAIN_EPISODES
             result['backbone'] = BACKBONE_TO_USE
             all_experiment_results.append(result)
+            print(f"Experiment completed - Episodes: {result.get('actual_episodes_run', 'N/A')}")
         except Exception as e:
-            print(f"ERROR during experiment for {dataset_name} (Max Episodes: {MAX_N_TRAIN_EPISODES}): {e}")
+            print(f"ERROR in experiment: {e}")
             import traceback
             traceback.print_exc()
             all_experiment_results.append({
@@ -99,50 +93,34 @@ def main():
                 "backbone": BACKBONE_TO_USE, 
                 "error": str(e)
             })
-        actual_episodes_run_display = 'N/A'
-        if 'result' in locals() and result:
-             actual_episodes_run_display = result.get('actual_episodes_run', 'N/A')
-        elif all_experiment_results and all_experiment_results[-1].get('error'): 
-             actual_episodes_run_display = all_experiment_results[-1].get('actual_episodes_run', 'N/A')
-
-        print(f"-- Experiment finished for {dataset_name}: Max Training Episodes: {MAX_N_TRAIN_EPISODES} (Actual: {actual_episodes_run_display}) --\n")
         
-    print('\n-- All Collected Results --')
-    for res_idx, res in enumerate(all_experiment_results):
-        dataset_display_name = res.get('dataset_name_for_plot', os.path.basename(str(res.get('dataset_path','Unknown'))))
-        print(f"\n--- Result for Dataset: {dataset_display_name} (Requested Max Episodes: {res.get('requested_episodes')}, Backbone: {res.get('backbone')}) ---")
-        print(f"  Actual Episodes Run: {res.get('actual_episodes_run', 'N/A')}")
-        if res.get('optimal_val_episode', 0) > 0 :
-             print(f"  Best Validation Accuracy during training: {res.get('best_val_accuracy', 0.0):.2f}% at episode ~{res.get('optimal_val_episode')}")
-        else:
-             print("  No validation improvement recorded or early stopping not effective/not reached.")
-        print(f"  Final Test Accuracy:         {res.get('accuracy', 0.0):.2f}%")
-        print(f"  Final Test F1 Score (macro): {res.get('f1_score', 0.0):.2f}%")
-        print(f"  Final Test Precision (macro):{res.get('precision', 0.0):.2f}%")
-        print(f"  Final Test Recall (macro):   {res.get('recall', 0.0):.2f}%")
-        print(f"  Total Time:                  {res.get('time', 0.0):.2f}s")
+    print('\n=== EXPERIMENT RESULTS ===')
+    for res in all_experiment_results:
+        dataset_name = res.get('dataset_name_for_plot', 'Unknown')
+        print(f"\nDataset: {dataset_name}")
+        print(f"  Episodes Run: {res.get('actual_episodes_run', 'N/A')}")
+        if res.get('optimal_val_episode', 0) > 0:
+             print(f"  Best Validation: {res.get('best_val_accuracy', 0.0):.2f}% at episode {res.get('optimal_val_episode')}")
+        print(f"  Test Accuracy: {res.get('accuracy', 0.0):.2f}%")
+        print(f"  F1 Score: {res.get('f1_score', 0.0):.2f}%")
+        print(f"  Time: {res.get('time', 0.0):.2f}s")
         if res.get('error'):
             print(f"  Error: {res.get('error')}")
 
     if all_experiment_results:
-        print("\n--- Generating Overall Performance Metrics Plot ---")
-        plot_results(
-            all_experiment_results,
-            plot_type="all_metrics_per_dataset" 
-        )
+        print("\nGenerating plots...")
+        plot_results(all_experiment_results, plot_type="all_metrics_per_dataset")
         
-        print("\n--- Generating Individual Confusion Matrices ---")
         for res_item in all_experiment_results:
             if res_item and not res_item.get('error'):
                 plot_results([res_item], plot_type="confusion_matrix", n_way_for_cm_plot=N_WAY)
             elif res_item.get('error'):
-                dataset_display_name = res_item.get('dataset_name_for_plot', 'Unknown Dataset')
-                print(f"Skipping confusion matrix for {dataset_display_name} due to error during experiment.")
-
+                dataset_name = res_item.get('dataset_name_for_plot', 'Unknown')
+                print(f"Skipping confusion matrix for {dataset_name} due to error")
     else:
-        print("No results were collected to plot.")
+        print("No results collected")
         
-    print("--- Main Script Finished ---")
+    print("\nExperiments completed")
 
 if __name__ == '__main__':
     main()

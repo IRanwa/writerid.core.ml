@@ -5,24 +5,70 @@ from azure.storage.blob import BlobServiceClient
 from collections import defaultdict
 import json
 import torch
-from executor import TaskExecutor
+from .executor import TaskExecutor
+from utils.api_client import ApiClient
 import shutil
 import time
 import uuid
+from typing import Dict, Optional
 
 class TaskProcessor:
     def __init__(self, connection_string):
         self.blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        self.api_client = ApiClient()
 
-    def analyze_dataset(self, container_name):
+    def _get_dataset_status(self, task_id: str) -> Optional[Dict]:
+        """Get dataset status from API"""
+        return self.api_client.get_dataset_status(task_id)
+
+    def _update_dataset_status(self, dataset_id: str, status: int, message: str = "") -> bool:
+        """Update dataset status via API"""
+        return self.api_client.update_dataset_status(dataset_id, status, message)
+
+    def analyze_dataset(self, task_id: str, container_name: str):
         """
-        Analyzes a dataset directly from an Azure Blob Storage container.
+        API-based dataset analysis method.
+        Processes dataset analysis requests using task ID and container name.
+        """
+        print(f"Starting dataset analysis for task ID: {task_id}, container: {container_name}")
+        
+        # Step 1: Perform the actual analysis
+        try:
+            analysis_result = self._perform_dataset_analysis(container_name)
+            
+            if analysis_result:
+                # Step 2: Update status to Completed (2)
+                success_message = f"Analysis completed successfully. Found {analysis_result.get('num_writers', 0)} writers."
+                update_success = self._update_dataset_status(task_id, 2, success_message)
+                
+                if update_success:
+                    print("Dataset analysis completed and API status updated successfully")
+                else:
+                    print("Analysis completed but failed to update API status")
+                    
+                return analysis_result
+            else:
+                # Step 2: Update status to Failed (3)
+                error_message = "Dataset analysis failed - no analyzable data found"
+                self._update_dataset_status(task_id, 3, error_message)
+                return None
+                
+        except Exception as e:
+            # Update status to Failed (3)
+            error_message = f"Dataset analysis failed: {str(e)}"
+            print(error_message)
+            self._update_dataset_status(task_id, 3, error_message)
+            return None
 
-        The analysis includes:
-        - Number of writers
-        - Writer names
-        - Minimum sample count
-        - Maximum sample count
+    def _perform_dataset_analysis(self, container_name: str):
+        """
+        Performs the actual dataset analysis on the Azure Blob Storage container.
+        
+        Args:
+            container_name: Name of the Azure Blob Storage container
+            
+        Returns:
+            Dict: Analysis results or None if failed
         """
         try:
             container_client = self.blob_service_client.get_container_client(container_name)
@@ -39,9 +85,7 @@ class TaskProcessor:
                     writer_counts[writer_id] += 1
 
             if not writer_counts:
-                return {
-                    "message": "No analyzable data found in the container."
-                }
+                return None  # Return None instead of message dict for consistency
             
             num_writers = len(writer_counts)
             writer_names = list(writer_counts.keys())
@@ -56,7 +100,8 @@ class TaskProcessor:
                 "writer_counts": dict(writer_counts)
             }
 
-            analysis_blob_name = f"{container_name}-analysis.json"
+            # Upload analysis results to blob storage
+            analysis_blob_name = f"analysis-results.json"
             analysis_blob_client = container_client.get_blob_client(analysis_blob_name)
             analysis_json = json.dumps(analysis, indent=4)
             
@@ -66,8 +111,8 @@ class TaskProcessor:
             return analysis
         
         except Exception as e:
-            print(f"An error occurred: {e}")
-            return None 
+            print(f"An error occurred during dataset analysis: {e}")
+            return None
 
     def train_model(self, dataset_container_name, model_container_name):
         """

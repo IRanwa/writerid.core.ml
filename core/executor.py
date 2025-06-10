@@ -10,12 +10,12 @@ import copy
 from typing import Dict, List, Optional, Tuple
 from PIL import Image
 
-from data_manager import DatasetManager
-from image_processor import ImagePreprocessor
-from sampler import EpisodicTaskSampler
-from network_architectures import BackboneNetworkHandler
-from models import PrototypicalNetworkModel
-from training_utils import fit_episode, evaluate_model, sliding_average
+from data.data_manager import DatasetManager
+from data.image_processor import ImagePreprocessor
+from .sampler import EpisodicTaskSampler
+from models.network_architectures import BackboneNetworkHandler
+from models.models import PrototypicalNetworkModel
+from utils.training_utils import fit_episode, evaluate_model, sliding_average
 
 class TaskExecutor:
     def __init__(self, run_config: Dict, n_way: int, n_shot: int, n_query: int,
