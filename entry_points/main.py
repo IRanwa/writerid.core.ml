@@ -2,6 +2,13 @@ import torch
 import random
 import numpy as np
 import os
+import sys
+from pathlib import Path
+
+# Add the project root directory to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from core.executor import TaskExecutor
 from utils.plotting_utils import plot_results
 
@@ -30,7 +37,7 @@ def main():
     }
     
     N_WAY = 5
-    N_SHOT = 7
+    N_SHOT = 5
     N_QUERY = 5
     N_EVALUATION_TASKS = 1000
     LEARNING_RATE = 0.0001
