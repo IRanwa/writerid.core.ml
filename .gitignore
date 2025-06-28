@@ -2,3 +2,4 @@ temp_data
 .env
 *.env
 !.env.example
+__pycache__/*
