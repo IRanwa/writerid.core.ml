@@ -36,6 +36,91 @@ class TaskProcessor:
         """Update dataset status via API"""
         return self.api_client.update_dataset_status(dataset_id, status, message)
 
+    def _extract_model_id(self, model_container_name: str) -> Optional[str]:
+        """
+        Extract model ID from container name by removing 'model-' prefix.
+        
+        Args:
+            model_container_name: Container name like 'model-1', 'model-123', 'model-70fb5fb0-9b8a-4b9f-9f6f-2cc4e7b11de8', etc.
+            
+        Returns:
+            str: Model ID (e.g., '1', '123', '70fb5fb0-9b8a-4b9f-9f6f-2cc4e7b11de8') or None if invalid format
+        """
+        try:
+            if model_container_name.startswith('model-'):
+                model_id = model_container_name[6:]  # Remove 'model-' prefix
+                print(f"Extracted model ID '{model_id}' from container name '{model_container_name}'")
+                return model_id
+            else:
+                print(f"Warning: Container name '{model_container_name}' does not follow 'model-{{id}}' format")
+                return None
+        except Exception as e:
+            print(f"Error extracting model ID from '{model_container_name}': {e}")
+            return None
+
+    def _get_model_status(self, model_id: str) -> Optional[Dict]:
+        """
+        Get current model status from API.
+        
+        Args:
+            model_id: The model ID to check
+            
+        Returns:
+            Dict: Model status information or None if failed
+        """
+        return self.api_client.get_model_status(model_id)
+
+    def _update_model_status(self, model_id: str, status: int, message: str = "") -> bool:
+        """
+        Update model status via API.
+        
+        Args:
+            model_id: The model ID to update
+            status: Status code (0=Created, 1=Processing, 2=Completed, 3=Failed, 4=Reconfigure)
+            message: Optional status message
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return self.api_client.update_model_status(model_id, status, message)
+
+    def _can_start_training(self, model_id: str) -> bool:
+        """
+        Check if a model can start training based on its current status.
+        
+        Args:
+            model_id: The model ID to check
+            
+        Returns:
+            bool: True if training can start, False otherwise
+        """
+        current_status = self._get_model_status(model_id)
+        if not current_status:
+            print(f"Could not retrieve current status for model {model_id} - training blocked for safety")
+            return False  # Block training if status check fails for safety
+        
+        status_value = current_status.get('status', None)
+        print(f"Current model {model_id} status: {status_value} (type: {type(status_value)})")
+        
+        # Handle both string and numeric status values
+        # Valid statuses for training: Created (0) or Reconfigure (4)
+        valid_string_statuses = ["Created", "Reconfigure"]
+        valid_numeric_statuses = [0, 4]
+        
+        # Check if status is valid (either string or numeric)
+        is_valid_status = (
+            (isinstance(status_value, str) and status_value in valid_string_statuses) or
+            (isinstance(status_value, int) and status_value in valid_numeric_statuses)
+        )
+        
+        if is_valid_status:
+            print(f"Model {model_id} is in '{status_value}' status - training can proceed")
+            return True
+        else:
+            print(f"Model {model_id} is in '{status_value}' status - training should not proceed")
+            print(f"Valid statuses for training: {valid_string_statuses} or {valid_numeric_statuses}")
+            return False
+
     def set_sampling_strategy(self, strategy: str = "files_per_writer", multiplier: float = 3.0, seed: int = 42):
         """
         Configure the dataset sampling strategy.
@@ -268,8 +353,30 @@ class TaskProcessor:
         """
         Trains a model using the specified dataset and saves the results.
         """
+        # Extract model ID and check if training can proceed
+        model_id = self._extract_model_id(model_container_name)
+        local_dataset_path = None  # Initialize to prevent NameError in finally block
+        
         try:
             print(f"Starting model training with dataset from '{dataset_container_name}'...")
+
+            # Check if model can start training (must be in Created or Reconfigure status)
+            if not model_id:
+                error_message = "Cannot extract model ID from container name - training aborted"
+                print(f"Training aborted: {error_message}")
+                return None
+            
+            if not self._can_start_training(model_id):
+                error_message = "Model is not in a valid state for training (must be Created or Reconfigure status)"
+                print(f"Training aborted: {error_message}")
+                return None
+
+            # Update model status to Processing (1)
+            update_success = self._update_model_status(model_id, 1, "Model training started")
+            if update_success:
+                print(f"Model {model_id} status updated to Processing")
+            else:
+                print(f"Failed to update model {model_id} status to Processing")
 
             temp_data_path = os.getenv('TEMP_DATA_PATH', './temp_data')
             local_dataset_path = f"{temp_data_path}/{dataset_container_name}"
@@ -304,6 +411,15 @@ class TaskProcessor:
                                         download_percentage=download_percentage,
                                         random_seed=self.sampling_seed):
                 print(f"Failed to download dataset from container: {dataset_container_name}")
+                
+                # Update model status to Failed (3) for dataset download failure
+                error_message = f"Failed to download dataset from container: {dataset_container_name}"
+                update_success = self._update_model_status(model_id, 3, error_message)
+                if update_success:
+                    print(f"Model {model_id} status updated to Failed due to dataset download failure")
+                else:
+                    print(f"Failed to update model {model_id} status to Failed")
+                
                 return None
             
             print("\n--- PyTorch & CUDA Diagnostics ---")
@@ -449,14 +565,30 @@ class TaskProcessor:
             
 
             
+            # Update model status to Completed (2) on success
+            update_success = self._update_model_status(model_id, 2, "Model training completed successfully")
+            if update_success:
+                print(f"Model {model_id} status updated to Completed")
+            else:
+                print(f"Failed to update model {model_id} status to Completed")
+            
             return result
 
         except Exception as e:
             print(f"An error occurred during model training: {e}")
+            
+            # Update model status to Failed (3) on error
+            error_message = f"Model training failed: {str(e)}"
+            update_success = self._update_model_status(model_id, 3, error_message)
+            if update_success:
+                print(f"Model {model_id} status updated to Failed")
+            else:
+                print(f"Failed to update model {model_id} status to Failed")
+            
             return None
         finally:
             # Clean up temporary dataset directory
-            if os.path.exists(local_dataset_path):
+            if local_dataset_path and os.path.exists(local_dataset_path):
                 try:
                     shutil.rmtree(local_dataset_path)
                     print(f"Cleaned up temporary dataset directory: {local_dataset_path}")

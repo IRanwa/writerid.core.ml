@@ -78,6 +78,25 @@ ANALYSIS_BLOB_NAME=analysis-results.json
 FINAL_MODEL_NAME=final_model.pth
 ```
 
+### API Configuration (Required for Status Tracking)
+```bash
+API_BASE_URL=https://localhost:44302       # Base URL for portal API
+API_KEY=your_api_key_here                 # Authentication key for API calls (REQUIRED)
+MODEL_API_AUTH_METHOD=auto                # Model API authentication method
+```
+
+**Important**: The `API_KEY` is required for automatic dataset and model status tracking. If not configured:
+- System will show warnings but continue to function
+- No status updates will be sent to the portal
+- Training will proceed normally without API integration
+
+#### Authentication Methods for Model API:
+- **auto** (default): Try both authentication methods, fallback automatically
+- **x-api-key**: Use x-api-key header (same as dataset API)
+- **bearer**: Use Authorization: Bearer header
+
+**Note**: Different API endpoints may require different authentication methods. The 'auto' setting will try both and use whichever works.
+
 ## Usage
 
 ### 1. Modify Configuration
@@ -160,12 +179,25 @@ N_SHOT=10, N_QUERY=10, SAMPLING_MULTIPLIER=2.0 → 40 files per writer
 ## Backwards Compatibility
 All environment variables have fallback default values that match the original hardcoded values, ensuring the system works without modification if no `config.env` file is present.
 
+## Model Status Tracking
+The system now includes automatic model status tracking through API calls. When training starts from a queue message:
+
+1. **Model ID Extraction**: Extracts ID from container name (e.g., `model-1` → `1`)
+2. **Status Updates**: Automatically updates model status:
+   - `Processing (1)` - When training starts
+   - `Completed (2)` - When training succeeds
+   - `Failed (3)` - When training fails
+3. **API Integration**: Makes GET calls to `api/external/models/{id}/status` and PUT calls to `api/external/models/status` with ModelId in body
+
+See `MODEL_STATUS_TRACKING.md` for detailed documentation.
+
 ## Benefits
 1. **Easy Configuration**: Change parameters without modifying code
 2. **Environment-specific Settings**: Different configurations for dev/test/prod
 3. **Version Control**: Keep sensitive configurations out of code
 4. **Flexibility**: Override individual parameters as needed
 5. **Maintainability**: Centralized configuration management
+6. **Automatic Status Tracking**: Real-time model training status updates
 
 ## Example Configurations
 

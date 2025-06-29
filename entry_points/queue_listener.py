@@ -184,7 +184,14 @@ class QueueMessageListener:
                             dataset_container_name = message_content.get("dataset_container_name")
                             model_container_name = message_content.get("model_container_name")
                             if dataset_container_name and model_container_name:
-                                print(f"Starting model training: {dataset_container_name}")
+                                print(f"Starting model training: {dataset_container_name} -> {model_container_name}")
+                                
+                                # Model status tracking is handled automatically by TaskProcessor:
+                                # - Extracts model ID from model_container_name (e.g., 'model-1' -> '1')
+                                # - Updates status to Processing (1) at start
+                                # - Updates status to Completed (2) on success or Failed (3) on error
+                                # - API calls made to GET api/external/models/{id}/status (check) and PUT api/external/models/status (update)
+                                
                                 result = self.task_processor.train_model(dataset_container_name, model_container_name)
                                 print("Model training completed")
                                 message_processed = True
