@@ -10,12 +10,17 @@ from utils.api_client import ApiClient
 import shutil
 import time
 import uuid
+import random
 from typing import Dict, Optional
 
 class TaskProcessor:
     def __init__(self, connection_string):
         self.blob_service_client = BlobServiceClient.from_connection_string(connection_string)
         self.api_client = ApiClient()
+        # Default sampling strategy: download max 50 files per writer
+        self.sampling_strategy = "files_per_writer"
+        self.sampling_value = 50
+        self.sampling_seed = 42
 
     def _get_dataset_status(self, task_id: str) -> Optional[Dict]:
         """Get dataset status from API"""
@@ -25,6 +30,20 @@ class TaskProcessor:
         """Update dataset status via API"""
         return self.api_client.update_dataset_status(dataset_id, status, message)
 
+    def set_sampling_strategy(self, strategy: str = "files_per_writer", value: float = 50, seed: int = 42):
+        """
+        Configure the dataset sampling strategy.
+        
+        Args:
+            strategy: 'files_per_writer' or 'percentage'
+            value: Number of files per writer (for 'files_per_writer') or percentage 0.0-1.0 (for 'percentage')
+            seed: Random seed for reproducible sampling
+        """
+        self.sampling_strategy = strategy
+        self.sampling_value = value
+        self.sampling_seed = seed
+        print(f"Sampling strategy set to: {strategy} with value {value}, seed {seed}")
+
     def analyze_dataset(self, task_id: str, container_name: str):
         """
         API-based dataset analysis method.
@@ -33,11 +52,9 @@ class TaskProcessor:
         print(f"Starting dataset analysis for task ID: {task_id}, container: {container_name}")
         
         try:
-        try:
             analysis_result = self._perform_dataset_analysis(container_name)
             
             if analysis_result:
-                success_message = f"Analysis completed successfully. Found {analysis_result.get('num_writers', 0)} writers."
                 success_message = f"Analysis completed successfully. Found {analysis_result.get('num_writers', 0)} writers."
                 update_success = self._update_dataset_status(task_id, 2, success_message)
                 
@@ -48,7 +65,6 @@ class TaskProcessor:
                     
                 return analysis_result
             else:
-                error_message = "Dataset analysis failed - no analyzable data found"
                 error_message = "Dataset analysis failed - no analyzable data found"
                 self._update_dataset_status(task_id, 3, error_message)
                 return None
@@ -113,6 +129,135 @@ class TaskProcessor:
             print(f"An error occurred during dataset analysis: {e}")
             return None
 
+    def _download_dataset(self, container_name: str, local_path: str, 
+                         max_files_per_writer: Optional[int] = None, 
+                         download_percentage: Optional[float] = None,
+                         random_seed: Optional[int] = None) -> bool:
+        """
+        Downloads a subset of the dataset from Azure Blob Storage to a local directory.
+        
+        Args:
+            container_name: Name of the Azure Blob Storage container
+            local_path: Local directory path to download to
+            max_files_per_writer: Maximum number of files to download per writer (optional)
+            download_percentage: Percentage of total files to download (0.0-1.0, optional)
+            random_seed: Random seed for reproducible sampling (optional)
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            print(f"Downloading dataset from container '{container_name}' to local path '{local_path}'...")
+            
+            # Set random seed if provided
+            if random_seed is not None:
+                random.seed(random_seed)
+            
+            # Create local directory if it doesn't exist
+            os.makedirs(local_path, exist_ok=True)
+            
+            container_client = self.blob_service_client.get_container_client(container_name)
+            
+            # First, collect all blobs and organize by writer
+            blobs = list(container_client.list_blobs())
+            writer_files = defaultdict(list)
+            json_files = []
+            
+            for blob in blobs:
+                # Skip analysis results and other JSON files but keep track of them
+                if blob.name.endswith('.json'):
+                    json_files.append(blob)
+                    continue
+                
+                # Organize files by writer (assuming directory structure: writer_id/file)
+                parts = blob.name.split('/')
+                if len(parts) > 1:
+                    writer_id = parts[0]
+                    writer_files[writer_id].append(blob)
+                else:
+                    # Files not organized by writer - treat as single group
+                    writer_files['root'].append(blob)
+            
+            # Select files to download based on specified criteria
+            files_to_download = []
+            
+            if max_files_per_writer is not None:
+                # Limit files per writer
+                for writer_id, files in writer_files.items():
+                    if len(files) <= max_files_per_writer:
+                        files_to_download.extend(files)
+                    else:
+                        # Randomly sample files for this writer
+                        selected_files = random.sample(files, max_files_per_writer)
+                        files_to_download.extend(selected_files)
+                        print(f"Writer {writer_id}: Selected {max_files_per_writer} out of {len(files)} files")
+                        
+            elif download_percentage is not None:
+                # Download a percentage of total files
+                all_files = [file for files in writer_files.values() for file in files]
+                num_files_to_download = int(len(all_files) * download_percentage)
+                if num_files_to_download == 0:
+                    num_files_to_download = 1  # Download at least one file
+                files_to_download = random.sample(all_files, min(num_files_to_download, len(all_files)))
+                print(f"Selected {len(files_to_download)} out of {len(all_files)} files ({download_percentage*100:.1f}%)")
+                
+            else:
+                # Default: download all files (original behavior)
+                files_to_download = [file for files in writer_files.values() for file in files]
+            
+            downloaded_count = 0
+            skipped_count = len(json_files)  # Count JSON files as skipped
+            
+            # Download selected files
+            for blob in files_to_download:
+                # Create local file path maintaining directory structure
+                local_file_path = os.path.join(local_path, blob.name)
+                
+                # Create directory structure if needed
+                os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+                
+                # Download the blob
+                blob_client = container_client.get_blob_client(blob.name)
+                
+                with open(local_file_path, "wb") as download_file:
+                    download_file.write(blob_client.download_blob().readall())
+                
+                downloaded_count += 1
+                
+                if downloaded_count % 10 == 0:
+                    print(f"Downloaded {downloaded_count} files...")
+            
+            print(f"Dataset download completed. Downloaded {downloaded_count} files, skipped {skipped_count} files.")
+            
+            # Show sampling summary
+            if max_files_per_writer is not None:
+                print(f"Applied per-writer limit: {max_files_per_writer} files per writer")
+            elif download_percentage is not None:
+                print(f"Applied percentage sampling: {download_percentage*100:.1f}% of total files")
+            
+            # Verify the download was successful
+            if downloaded_count == 0:
+                print("Warning: No files were downloaded from the container.")
+                return False
+            
+            # Check if we have the expected directory structure
+            if not os.path.exists(local_path):
+                print(f"Error: Local dataset path {local_path} does not exist after download.")
+                return False
+            
+            # List the contents of the downloaded dataset
+            try:
+                contents = os.listdir(local_path)
+                print(f"Local dataset contains {len(contents)} directories/files: {contents[:10]}...")  # Show first 10
+            except Exception as e:
+                print(f"Warning: Could not list contents of {local_path}: {e}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error downloading dataset: {e}")
+            return False
+
     def train_model(self, dataset_container_name, model_container_name):
         """
         Trains a model using the specified dataset and saves the results.
@@ -121,6 +266,26 @@ class TaskProcessor:
             print(f"Starting model training with dataset from '{dataset_container_name}'...")
 
             local_dataset_path = f"./temp_data/{dataset_container_name}"
+            
+            # Download dataset from Azure Blob Storage with configured random sampling
+            print(f"Using sampling strategy: {self.sampling_strategy} with value {self.sampling_value}")
+            
+            # Configure sampling parameters based on strategy
+            max_files_per_writer = None
+            download_percentage = None
+            
+            if self.sampling_strategy == "files_per_writer":
+                max_files_per_writer = int(self.sampling_value)
+            elif self.sampling_strategy == "percentage":
+                download_percentage = float(self.sampling_value)
+            
+            if not self._download_dataset(dataset_container_name, local_dataset_path, 
+                                        max_files_per_writer=max_files_per_writer,
+                                        download_percentage=download_percentage,
+                                        random_seed=self.sampling_seed):
+                print(f"Failed to download dataset from container: {dataset_container_name}")
+                return None
+            
             print("\n--- PyTorch & CUDA Diagnostics ---")
             print(f"PyTorch version: {torch.__version__}")
             is_cuda_available = torch.cuda.is_available()
@@ -157,7 +322,7 @@ class TaskProcessor:
                 n_query=5,
                 n_training_episodes=10,
                 n_evaluation_tasks=10,
-                learning_rate=0.001,
+                learning_rate=0.0001,
                 backbone_name="googlenet",
                 pretrained_backbone=True,
                 seed=42,
@@ -265,7 +430,15 @@ class TaskProcessor:
 
         except Exception as e:
             print(f"An error occurred during model training: {e}")
-            return None 
+            return None
+        finally:
+            # Clean up temporary dataset directory
+            if os.path.exists(local_dataset_path):
+                try:
+                    shutil.rmtree(local_dataset_path)
+                    print(f"Cleaned up temporary dataset directory: {local_dataset_path}")
+                except Exception as cleanup_error:
+                    print(f"Warning: Failed to clean up {local_dataset_path}: {cleanup_error}") 
 
     def _chunked_upload(self, blob_client, file_path, chunk_size=4*1024*1024):
         """Upload a file in chunks for better reliability with large files."""

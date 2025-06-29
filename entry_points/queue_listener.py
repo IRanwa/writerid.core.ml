@@ -5,7 +5,11 @@ import time
 import traceback
 import base64
 import binascii
+from pathlib import Path
 from dotenv import load_dotenv
+
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 
 try:
@@ -48,6 +52,16 @@ class QueueMessageListener:
                 self.queue_name
             )
             self.task_processor = TaskProcessor(self.connection_string)
+            
+            # Configure dataset sampling strategy - you can modify these values:
+            # Option 1: Limit files per writer (e.g., download max 30 files per writer)
+            # self.task_processor.set_sampling_strategy("files_per_writer", 30, seed=42)
+            
+            # Option 2: Download percentage of total files (e.g., 25% of all files)
+            # self.task_processor.set_sampling_strategy("percentage", 0.25, seed=42)
+            
+            # Current default: download max 50 files per writer
+            print(f"Dataset sampling configured: {self.task_processor.sampling_strategy} = {self.task_processor.sampling_value}")
         except Exception as e:
             print(f"Failed to initialize clients: {e}")
             raise

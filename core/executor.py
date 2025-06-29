@@ -265,6 +265,11 @@ class TaskExecutor:
         best_val_acc_from_training = 0.0
         error_message = None
         best_model_state = None
+        
+        # Initialize threshold variables outside try block to avoid scope issues
+        optimal_threshold = None
+        threshold_accuracy = None
+        threshold_results = []
 
         try:
             self.setup_pipeline()
@@ -273,11 +278,6 @@ class TaskExecutor:
             if best_model_state is None and actual_episodes_run > 0:
                print("No best model from validation was found. Using model from the final episode.")
                best_model_state = self.proto_model.state_dict()
-        
-
-            optimal_threshold = None
-            threshold_accuracy = None
-            threshold_results = []
             
             if best_model_state and self.val_loader_for_early_stopping:
                 print("\n--- Executor: Finding Optimal Threshold ---")
