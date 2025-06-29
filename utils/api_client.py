@@ -3,7 +3,7 @@ import urllib3
 from typing import Dict, Optional
 import os
 
-# Suppress SSL warnings for localhost development
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
@@ -26,10 +26,8 @@ class ApiClient:
         if not self.api_key:
             raise ValueError("API_KEY must be provided either as parameter or environment variable")
             
-        # Remove trailing slash from base URL if present
         self.base_url = self.base_url.rstrip('/')
         
-        # Set up default headers
         self.headers = {
             "Content-Type": "application/json",
             "x-api-key": self.api_key
@@ -66,7 +64,7 @@ class ApiClient:
         except requests.exceptions.RequestException as e:
             print(f"Error making API request to get dataset status: {e}")
             return None
-        except ValueError as e:  # JSON decode error
+        except ValueError as e:
             print(f"Error parsing API response: {e}")
             return None
 

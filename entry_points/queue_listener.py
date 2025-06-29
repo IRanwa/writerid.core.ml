@@ -7,14 +7,14 @@ import base64
 import binascii
 from dotenv import load_dotenv
 
-# Azure imports with error handling
+
 try:
     from azure.storage.queue import QueueClient, TextBase64EncodePolicy, TextBase64DecodePolicy
 except ImportError as e:
     print(f"Failed to import Azure Storage Queue library: {e}")
     sys.exit(1)
 
-# Local imports
+
 try:
     from core.task_processor import TaskProcessor
 except ImportError as e:

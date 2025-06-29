@@ -32,12 +32,12 @@ class TaskProcessor:
         """
         print(f"Starting dataset analysis for task ID: {task_id}, container: {container_name}")
         
-        # Step 1: Perform the actual analysis
+        try:
         try:
             analysis_result = self._perform_dataset_analysis(container_name)
             
             if analysis_result:
-                # Step 2: Update status to Completed (2)
+                success_message = f"Analysis completed successfully. Found {analysis_result.get('num_writers', 0)} writers."
                 success_message = f"Analysis completed successfully. Found {analysis_result.get('num_writers', 0)} writers."
                 update_success = self._update_dataset_status(task_id, 2, success_message)
                 
@@ -48,13 +48,12 @@ class TaskProcessor:
                     
                 return analysis_result
             else:
-                # Step 2: Update status to Failed (3)
+                error_message = "Dataset analysis failed - no analyzable data found"
                 error_message = "Dataset analysis failed - no analyzable data found"
                 self._update_dataset_status(task_id, 3, error_message)
                 return None
                 
         except Exception as e:
-            # Update status to Failed (3)
             error_message = f"Dataset analysis failed: {str(e)}"
             print(error_message)
             self._update_dataset_status(task_id, 3, error_message)
@@ -85,7 +84,7 @@ class TaskProcessor:
                     writer_counts[writer_id] += 1
 
             if not writer_counts:
-                return None  # Return None instead of message dict for consistency
+                return None
             
             num_writers = len(writer_counts)
             writer_names = list(writer_counts.keys())
@@ -100,7 +99,7 @@ class TaskProcessor:
                 "writer_counts": dict(writer_counts)
             }
 
-            # Upload analysis results to blob storage
+
             analysis_blob_name = f"analysis-results.json"
             analysis_blob_client = container_client.get_blob_client(analysis_blob_name)
             analysis_json = json.dumps(analysis, indent=4)

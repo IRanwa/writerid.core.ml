@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-# Add the project root directory to Python path
+
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -118,7 +118,6 @@ def main():
         print(f"  Recall: {res.get('recall', 0.0):.2f}%")
         print(f"  Time: {res.get('time', 0.0):.2f}s")
         
-        # Show confusion matrix if available
         confusion_matrix = res.get('confusion_matrix')
         if confusion_matrix is not None:
             print(f"  Confusion Matrix:")
@@ -127,12 +126,10 @@ def main():
         else:
             print(f"  Confusion Matrix: Not available")
         
-        # Show threshold information
         if res.get('optimal_threshold') is not None:
             print(f"  Optimal Threshold: {res.get('optimal_threshold'):.4f}")
             print(f"  Threshold Accuracy: {res.get('threshold_accuracy', 0.0):.4f}")
             
-            # Show final test results with threshold applied
             if res.get('acceptance_rate') is not None:
                 print(f"  Final Test with Threshold:")
                 print(f"    Acceptance Rate: {res.get('acceptance_rate', 0.0):.1f}%")

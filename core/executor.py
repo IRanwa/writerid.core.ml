@@ -273,8 +273,8 @@ class TaskExecutor:
             if best_model_state is None and actual_episodes_run > 0:
                print("No best model from validation was found. Using model from the final episode.")
                best_model_state = self.proto_model.state_dict()
+        
 
-            # Find optimal threshold before saving model
             optimal_threshold = None
             threshold_accuracy = None
             threshold_results = []
@@ -301,7 +301,7 @@ class TaskExecutor:
                 filename = f"{self.backbone_name}_ep{ep_for_filename}_acc{acc_for_filename:.2f}.pth"
                 full_path = os.path.join(self.model_save_path, filename)
                 
-                # Save complete model package with threshold
+    
                 model_package = {
                     'model_state_dict': best_model_state,
                     'optimal_threshold': optimal_threshold,
@@ -357,7 +357,7 @@ class TaskExecutor:
                             collate_fn=final_test_sampler.episodic_collate_fn
                         )
                         
-                        # Use threshold-based evaluation if optimal threshold was found
+            
                         if optimal_threshold is not None and optimal_threshold > 0:
                             print(f"Applying optimal threshold {optimal_threshold:.4f} to final test evaluation")
                             evaluation_metrics = evaluate_with_threshold(

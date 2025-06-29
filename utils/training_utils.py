@@ -31,7 +31,7 @@ def find_optimal_threshold_for_testing(
     model.eval()
     model.to(device)
     
-    # Collect all scores and true labels from validation set
+
     all_scores = []
     all_true_labels = []
     
@@ -51,11 +51,11 @@ def find_optimal_threshold_for_testing(
     if not all_scores:
         return {"optimal_threshold": 0.0, "best_accuracy": 0.0}
     
-    # Concatenate all collected data
+
     all_scores = torch.cat(all_scores, dim=0)
     all_true_labels = torch.cat(all_true_labels, dim=0)
     
-    # Test different threshold values
+
     thresholds = np.linspace(threshold_range[0], threshold_range[1], num_thresholds)
     
     best_threshold = 0.0
@@ -63,23 +63,19 @@ def find_optimal_threshold_for_testing(
     results = []
     
     for threshold in thresholds:
-        # Calculate confidence (difference between top 2 scores)
         sorted_scores, _ = torch.sort(all_scores, dim=1, descending=True)
         if all_scores.size(1) > 1:
             confidence = sorted_scores[:, 0] - sorted_scores[:, 1]
         else:
             confidence = sorted_scores[:, 0]
         
-        # Apply threshold - only keep predictions with confidence >= threshold
         valid_mask = confidence >= threshold
         
         if valid_mask.sum() > 0:
-            # Get predictions for valid samples
             valid_scores = all_scores[valid_mask]
             valid_true_labels = all_true_labels[valid_mask]
             predictions = torch.argmax(valid_scores, dim=1)
             
-            # Calculate accuracy on accepted predictions
             accuracy = (predictions == valid_true_labels).float().mean().item()
             acceptance_rate = valid_mask.float().mean().item()
             
@@ -91,7 +87,6 @@ def find_optimal_threshold_for_testing(
                 'num_total': len(all_true_labels)
             })
             
-            # Update best threshold
             if accuracy > best_accuracy:
                 best_accuracy = accuracy
                 best_threshold = threshold
@@ -148,28 +143,22 @@ def evaluate_with_threshold(
             if support_images.numel() == 0 or query_images.numel() == 0:
                 continue
                 
-            # Get model predictions
             classification_scores = model(support_images, support_labels, query_images)
             
-            # Calculate confidence (difference between top 2 scores)
             sorted_scores, _ = torch.sort(classification_scores, dim=1, descending=True)
             if classification_scores.size(1) > 1:
                 confidence = sorted_scores[:, 0] - sorted_scores[:, 1]
             else:
                 confidence = sorted_scores[:, 0]
             
-            # Get predictions
             predictions = torch.argmax(classification_scores, dim=1)
             
-            # Apply threshold filter
             valid_mask = confidence >= threshold_value
             
             total_samples += len(query_labels)
             accepted_samples += valid_mask.sum().item()
             
-            # Only evaluate predictions that pass the threshold
             if valid_mask.sum() > 0:
-                # Ensure all tensors are on the same device for indexing
                 valid_mask_cpu = valid_mask.cpu()
                 predictions_cpu = predictions.cpu()
                 query_labels_cpu = query_labels.cpu()
@@ -181,7 +170,6 @@ def evaluate_with_threshold(
                 all_true_labels.extend(accepted_true_labels.numpy())
                 all_pred_labels.extend(accepted_predictions.numpy())
     
-    # Calculate metrics
     metrics = {"accuracy": 0.0, "f1": 0.0, "precision": 0.0, "recall": 0.0, "confusion_matrix": None}
     
     if accepted_samples > 0:
@@ -194,7 +182,6 @@ def evaluate_with_threshold(
             metrics["recall"] = recall_score(all_true_labels, all_pred_labels, average='macro', labels=unique_task_labels, zero_division=0) * 100
             metrics["confusion_matrix"] = confusion_matrix(all_true_labels, all_pred_labels, labels=unique_task_labels).tolist()
     
-    # Add threshold-specific metrics
     acceptance_rate = (accepted_samples / total_samples * 100) if total_samples > 0 else 0.0
     rejection_rate = ((total_samples - accepted_samples) / total_samples * 100) if total_samples > 0 else 0.0
     
