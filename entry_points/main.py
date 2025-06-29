@@ -32,7 +32,7 @@ def main():
     base_run_config = {
         'image_size': 224,
         'train_ratio': 0.7,
-        'num_workers': 0,
+        'num_workers': 3,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu'
     }
     
@@ -79,6 +79,7 @@ def main():
 
         try:
             result = executor.run_single_experiment()
+            
             result['dataset_path'] = current_dataset_path
             result['dataset_name_for_plot'] = dataset_name
             result['requested_episodes'] = MAX_N_TRAIN_EPISODES
@@ -98,7 +99,10 @@ def main():
                 "optimal_val_episode": 0,
                 "best_val_accuracy": 0.0,
                 "backbone": BACKBONE_TO_USE, 
-                "error": str(e)
+                "error": str(e),
+                "optimal_threshold": None,
+                "threshold_accuracy": None,
+                "threshold_results": []
             })
         
     print('\n=== EXPERIMENT RESULTS ===')
@@ -110,7 +114,43 @@ def main():
              print(f"  Best Validation: {res.get('best_val_accuracy', 0.0):.2f}% at episode {res.get('optimal_val_episode')}")
         print(f"  Test Accuracy: {res.get('accuracy', 0.0):.2f}%")
         print(f"  F1 Score: {res.get('f1_score', 0.0):.2f}%")
+        print(f"  Precision: {res.get('precision', 0.0):.2f}%")
+        print(f"  Recall: {res.get('recall', 0.0):.2f}%")
         print(f"  Time: {res.get('time', 0.0):.2f}s")
+        
+        # Show confusion matrix if available
+        confusion_matrix = res.get('confusion_matrix')
+        if confusion_matrix is not None:
+            print(f"  Confusion Matrix:")
+            for i, row in enumerate(confusion_matrix):
+                print(f"    Class {i}: {row}")
+        else:
+            print(f"  Confusion Matrix: Not available")
+        
+        # Show threshold information
+        if res.get('optimal_threshold') is not None:
+            print(f"  Optimal Threshold: {res.get('optimal_threshold'):.4f}")
+            print(f"  Threshold Accuracy: {res.get('threshold_accuracy', 0.0):.4f}")
+            
+            # Show final test results with threshold applied
+            if res.get('acceptance_rate') is not None:
+                print(f"  Final Test with Threshold:")
+                print(f"    Acceptance Rate: {res.get('acceptance_rate', 0.0):.1f}%")
+                print(f"    Samples Used: {res.get('accepted_samples', 0)}/{res.get('total_samples', 0)}")
+                print(f"    Rejected: {res.get('rejected_samples', 0)} samples")
+            
+            # Show acceptance rates for different thresholds
+            threshold_results = res.get('threshold_results', [])
+            if threshold_results:
+                print(f"  Threshold Analysis:")
+                # Show a few key thresholds
+                for i in [0, len(threshold_results)//4, len(threshold_results)//2, 3*len(threshold_results)//4, -1]:
+                    if 0 <= i < len(threshold_results):
+                        tr = threshold_results[i]
+                        print(f"    Threshold {tr['threshold']:.2f}: {tr['accuracy']:.3f} acc, {tr['acceptance_rate']:.3f} accept rate")
+        else:
+            print(f"  Optimal Threshold: Not calculated")
+            
         if res.get('error'):
             print(f"  Error: {res.get('error')}")
 
