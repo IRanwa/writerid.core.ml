@@ -53,15 +53,17 @@ class QueueMessageListener:
             )
             self.task_processor = TaskProcessor(self.connection_string)
             
-            # Configure dataset sampling strategy - you can modify these values:
-            # Option 1: Limit files per writer (e.g., download max 30 files per writer)
-            # self.task_processor.set_sampling_strategy("files_per_writer", 30, seed=42)
+            # Dataset sampling strategy is now configured via environment variables in config.env
+            # Sampling is calculated based on (n_shot + n_query) * multiplier for better episode formation
+            # You can override the settings by calling:
+            # self.task_processor.set_sampling_strategy("files_per_writer", 3.0, seed=42)  # 3x multiplier
+            # self.task_processor.set_sampling_strategy("percentage", 0.25, seed=42)       # 25% of files
             
-            # Option 2: Download percentage of total files (e.g., 25% of all files)
-            # self.task_processor.set_sampling_strategy("percentage", 0.25, seed=42)
+            # Current configuration loaded from environment:
+            print(f"Dataset sampling configured from config.env: {self.task_processor.sampling_strategy}, multiplier = {self.task_processor.sampling_multiplier}, seed = {self.task_processor.sampling_seed}")
             
-            # Current default: download max 50 files per writer
-            print(f"Dataset sampling configured: {self.task_processor.sampling_strategy} = {self.task_processor.sampling_value}")
+            # Uncomment to override environment settings:
+            # self.task_processor.set_sampling_strategy("files_per_writer", 4.0, seed=42)  # 4x multiplier
         except Exception as e:
             print(f"Failed to initialize clients: {e}")
             raise

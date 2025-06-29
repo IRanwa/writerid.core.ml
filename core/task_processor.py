@@ -12,15 +12,21 @@ import time
 import uuid
 import random
 from typing import Dict, Optional
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Load environment configuration
+project_root = Path(__file__).parent.parent
+load_dotenv(os.path.join(project_root, 'config.env'))
 
 class TaskProcessor:
     def __init__(self, connection_string):
         self.blob_service_client = BlobServiceClient.from_connection_string(connection_string)
         self.api_client = ApiClient()
-        # Default sampling strategy: download max 50 files per writer
-        self.sampling_strategy = "files_per_writer"
-        self.sampling_value = 50
-        self.sampling_seed = 42
+        # Load sampling strategy from environment variables with fallback defaults
+        self.sampling_strategy = os.getenv('SAMPLING_STRATEGY', 'files_per_writer')
+        self.sampling_multiplier = float(os.getenv('SAMPLING_MULTIPLIER', '3.0'))
+        self.sampling_seed = int(os.getenv('SAMPLING_SEED', '42'))
 
     def _get_dataset_status(self, task_id: str) -> Optional[Dict]:
         """Get dataset status from API"""
@@ -30,19 +36,19 @@ class TaskProcessor:
         """Update dataset status via API"""
         return self.api_client.update_dataset_status(dataset_id, status, message)
 
-    def set_sampling_strategy(self, strategy: str = "files_per_writer", value: float = 50, seed: int = 42):
+    def set_sampling_strategy(self, strategy: str = "files_per_writer", multiplier: float = 3.0, seed: int = 42):
         """
         Configure the dataset sampling strategy.
         
         Args:
-            strategy: 'files_per_writer' or 'percentage'
-            value: Number of files per writer (for 'files_per_writer') or percentage 0.0-1.0 (for 'percentage')
+            strategy: 'files_per_writer' or 'percentage'  
+            multiplier: Multiplier for (n_shot + n_query) calculation or percentage 0.0-1.0 (for 'percentage')
             seed: Random seed for reproducible sampling
         """
         self.sampling_strategy = strategy
-        self.sampling_value = value
+        self.sampling_multiplier = multiplier
         self.sampling_seed = seed
-        print(f"Sampling strategy set to: {strategy} with value {value}, seed {seed}")
+        print(f"Sampling strategy set to: {strategy} with multiplier {multiplier}, seed {seed}")
 
     def analyze_dataset(self, task_id: str, container_name: str):
         """
@@ -116,7 +122,7 @@ class TaskProcessor:
             }
 
 
-            analysis_blob_name = f"analysis-results.json"
+            analysis_blob_name = os.getenv('ANALYSIS_BLOB_NAME', 'analysis-results.json')
             analysis_blob_client = container_client.get_blob_client(analysis_blob_name)
             analysis_json = json.dumps(analysis, indent=4)
             
@@ -265,19 +271,33 @@ class TaskProcessor:
         try:
             print(f"Starting model training with dataset from '{dataset_container_name}'...")
 
-            local_dataset_path = f"./temp_data/{dataset_container_name}"
+            temp_data_path = os.getenv('TEMP_DATA_PATH', './temp_data')
+            local_dataset_path = f"{temp_data_path}/{dataset_container_name}"
             
             # Download dataset from Azure Blob Storage with configured random sampling
-            print(f"Using sampling strategy: {self.sampling_strategy} with value {self.sampling_value}")
+            # Calculate sampling based on n_shot and n_query values
+            n_shot = int(os.getenv('N_SHOT', '5'))
+            n_query = int(os.getenv('N_QUERY', '5'))
+            
+            # Calculate sampling value based on episode requirements
+            if self.sampling_strategy == "files_per_writer":
+                # For files_per_writer: calculate based on (n_shot + n_query) * multiplier
+                calculated_sampling_value = int((n_shot + n_query) * self.sampling_multiplier)
+                print(f"Using sampling strategy: {self.sampling_strategy}")
+                print(f"Calculated sampling: (n_shot={n_shot} + n_query={n_query}) * {self.sampling_multiplier} = {calculated_sampling_value} files per writer")
+            elif self.sampling_strategy == "percentage":
+                # For percentage: use multiplier as percentage directly
+                calculated_sampling_value = self.sampling_multiplier
+                print(f"Using sampling strategy: {self.sampling_strategy} with {calculated_sampling_value*100:.1f}% of files")
             
             # Configure sampling parameters based on strategy
             max_files_per_writer = None
             download_percentage = None
             
             if self.sampling_strategy == "files_per_writer":
-                max_files_per_writer = int(self.sampling_value)
+                max_files_per_writer = calculated_sampling_value
             elif self.sampling_strategy == "percentage":
-                download_percentage = float(self.sampling_value)
+                download_percentage = calculated_sampling_value
             
             if not self._download_dataset(dataset_container_name, local_dataset_path, 
                                         max_files_per_writer=max_files_per_writer,
@@ -304,9 +324,9 @@ class TaskProcessor:
 
             run_config = {
                 'dataset_path': local_dataset_path,
-                'image_size': 224,
-                'train_ratio': 0.7,
-                'num_workers': 0,
+                'image_size': int(os.getenv('IMAGE_SIZE', '224')),
+                'train_ratio': float(os.getenv('TRAIN_RATIO', '0.7')),
+                'num_workers': int(os.getenv('NUM_WORKERS_TASK_PROCESSOR', '0')),
                 'device': 'cuda' if torch.cuda.is_available() else 'cpu'
             }
             print(run_config)
@@ -317,17 +337,17 @@ class TaskProcessor:
 
             executor = TaskExecutor(
                 run_config=run_config,
-                n_way=5,
-                n_shot=5,
-                n_query=5,
-                n_training_episodes=10,
-                n_evaluation_tasks=10,
-                learning_rate=0.0001,
-                backbone_name="googlenet",
-                pretrained_backbone=True,
-                seed=42,
-                evaluation_interval=600,
-                early_stopping_patience=5,
+                n_way=int(os.getenv('N_WAY', '5')),
+                n_shot=int(os.getenv('N_SHOT', '5')),
+                n_query=int(os.getenv('N_QUERY', '5')),
+                n_training_episodes=int(os.getenv('N_TRAINING_EPISODES', '10')),
+                n_evaluation_tasks=int(os.getenv('N_EVALUATION_TASKS', '10')),
+                learning_rate=float(os.getenv('LEARNING_RATE', '0.0001')),
+                backbone_name=os.getenv('BACKBONE_NAME', 'googlenet'),
+                pretrained_backbone=os.getenv('PRETRAINED_BACKBONE', 'true').lower() == 'true',
+                seed=int(os.getenv('SEED', '42')),
+                evaluation_interval=int(os.getenv('EVALUATION_INTERVAL', '600')),
+                early_stopping_patience=int(os.getenv('EARLY_STOPPING_PATIENCE', '5')),
                 model_save_path=model_save_path
             )
 
@@ -355,7 +375,8 @@ class TaskProcessor:
             if not model_path:
                 print("No model file found. Saving current model state...")
                 try:
-                    final_model_path = os.path.join(models_dir, "final_model.pth")
+                    final_model_name = os.getenv('FINAL_MODEL_NAME', 'final_model.pth')
+                    final_model_path = os.path.join(models_dir, final_model_name)
                     os.makedirs(models_dir, exist_ok=True)
                     torch.save(executor.proto_model.state_dict(), final_model_path)
                     if os.path.exists(final_model_path):
@@ -378,7 +399,7 @@ class TaskProcessor:
                 if "ContainerAlreadyExists" not in str(e):
                     raise
             
-            results_blob_name = "training_results.json"
+            results_blob_name = os.getenv('RESULTS_BLOB_NAME', 'training_results.json')
             model_container_client.upload_blob(name=results_blob_name, data=results_json, overwrite=True)
             print(f"Training results uploaded to {model_container_name}/{results_blob_name}")
             
@@ -388,26 +409,28 @@ class TaskProcessor:
                 file_size = os.path.getsize(model_path)
                 print(f"Model file size: {file_size / (1024*1024):.2f} MB")
                 
-                max_retries = 3
-                retry_delay = 5
+                max_retries = int(os.getenv('MAX_UPLOAD_RETRIES', '3'))
+                retry_delay = int(os.getenv('UPLOAD_RETRY_DELAY', '5'))
+                large_file_threshold = int(os.getenv('LARGE_FILE_THRESHOLD_MB', '10')) * 1024 * 1024
                 
                 for attempt in range(max_retries):
                     try:
                         print(f"Upload attempt {attempt + 1}/{max_retries}")
-                        model_blob_name = "best_model.pth"
+                        model_blob_name = os.getenv('MODEL_BLOB_NAME', 'best_model.pth')
                         
                         blob_client = model_container_client.get_blob_client(model_blob_name)
                         
-                        if file_size > 10 * 1024 * 1024:
+                        if file_size > large_file_threshold:
                             print("Using chunked upload for large file...")
                             self._chunked_upload(blob_client, model_path)
                         else:
                             print("Using standard upload...")
+                            upload_timeout = int(os.getenv('UPLOAD_TIMEOUT', '120'))
                             with open(model_path, "rb") as data:
                                 blob_client.upload_blob(
                                     data, 
                                     overwrite=True,
-                                    timeout=120
+                                    timeout=upload_timeout
                                 )
                         
                         print(f"Model file uploaded to {model_container_name}/{model_blob_name}")
@@ -440,9 +463,12 @@ class TaskProcessor:
                 except Exception as cleanup_error:
                     print(f"Warning: Failed to clean up {local_dataset_path}: {cleanup_error}") 
 
-    def _chunked_upload(self, blob_client, file_path, chunk_size=4*1024*1024):
+    def _chunked_upload(self, blob_client, file_path, chunk_size=None):
         """Upload a file in chunks for better reliability with large files."""
         try:
+            if chunk_size is None:
+                chunk_size = int(os.getenv('CHUNK_SIZE_MB', '4')) * 1024 * 1024
+                
             try:
                 blob_client.delete_blob()
             except:

@@ -4,10 +4,14 @@ import numpy as np
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
-
+# Load environment variables from config.env file
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+# Load environment configuration
+load_dotenv(os.path.join(project_root, 'config.env'))
 
 from core.executor import TaskExecutor
 from utils.plotting_utils import plot_results
@@ -23,29 +27,31 @@ def set_seeds(seed_value: int, device_type: str):
         torch.backends.cudnn.benchmark = False
 
 def main():
-    BASE_DATASET_PATH = r"D:\\IIT\\Final Year Project\\2025 Project\\Final Datasets\\Datasets"
-    DATASET_NAMES = ["Combined_Balanced_All_Equal_Groups"]
+    # Load configuration from environment variables with fallback defaults
+    BASE_DATASET_PATH = os.getenv('BASE_DATASET_PATH', r"D:\IIT\Final Year Project\2025 Project\Final Datasets\Datasets")
+    DATASET_NAMES = os.getenv('DATASET_NAMES', 'Combined_Balanced_All_Equal_Groups').split(',')
     
-    MODEL_SAVE_PATH = r"D:\\IIT\\Final Year Project\\2025 Project\\IPD\\Code\\Models"
-    EMBEDDINGS_SAVE_PATH = r"D:\\IIT\\Final Year Project\\2025 Project\\IPD\\Code\\Embeddings"
+    MODEL_SAVE_PATH = os.getenv('MODEL_SAVE_PATH', r"D:\IIT\Final Year Project\2025 Project\IPD\Code\Models")
+    EMBEDDINGS_SAVE_PATH = os.getenv('EMBEDDINGS_SAVE_PATH', r"D:\IIT\Final Year Project\2025 Project\IPD\Code\Embeddings")
     
     base_run_config = {
-        'image_size': 224,
-        'train_ratio': 0.7,
-        'num_workers': 3,
+        'image_size': int(os.getenv('IMAGE_SIZE', '224')),
+        'train_ratio': float(os.getenv('TRAIN_RATIO', '0.7')),
+        'num_workers': int(os.getenv('NUM_WORKERS_MAIN', '3')),
         'device': 'cuda' if torch.cuda.is_available() else 'cpu'
     }
     
-    N_WAY = 5
-    N_SHOT = 5
-    N_QUERY = 5
-    N_EVALUATION_TASKS = 1000
-    LEARNING_RATE = 0.0001
-    SEED = 42
-    BACKBONE_TO_USE = "googlenet"
-    MAX_N_TRAIN_EPISODES = 10000
-    EVALUATION_INTERVAL = 600
-    EARLY_STOPPING_PATIENCE = 5
+    N_WAY = int(os.getenv('N_WAY', '5'))
+    N_SHOT = int(os.getenv('N_SHOT', '5'))
+    N_QUERY = int(os.getenv('N_QUERY', '5'))
+    N_EVALUATION_TASKS = int(os.getenv('N_EVALUATION_TASKS', '1000'))
+    LEARNING_RATE = float(os.getenv('LEARNING_RATE', '0.0001'))
+    SEED = int(os.getenv('SEED', '42'))
+    BACKBONE_TO_USE = os.getenv('BACKBONE_NAME', 'googlenet')
+    MAX_N_TRAIN_EPISODES = int(os.getenv('MAX_N_TRAIN_EPISODES', '10000'))
+    EVALUATION_INTERVAL = int(os.getenv('EVALUATION_INTERVAL', '600'))
+    EARLY_STOPPING_PATIENCE = int(os.getenv('EARLY_STOPPING_PATIENCE', '5'))
+    PRETRAINED_BACKBONE = os.getenv('PRETRAINED_BACKBONE', 'true').lower() == 'true'
     
     set_seeds(SEED, base_run_config['device'])
 
@@ -69,7 +75,7 @@ def main():
             n_evaluation_tasks=N_EVALUATION_TASKS,
             learning_rate=LEARNING_RATE,
             backbone_name=BACKBONE_TO_USE,
-            pretrained_backbone=True,
+            pretrained_backbone=PRETRAINED_BACKBONE,
             seed=SEED,
             evaluation_interval=EVALUATION_INTERVAL,
             early_stopping_patience=EARLY_STOPPING_PATIENCE,
