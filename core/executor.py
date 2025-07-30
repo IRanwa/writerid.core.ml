@@ -15,7 +15,7 @@ from data.image_processor import ImagePreprocessor
 from .sampler import EpisodicTaskSampler
 from models.network_architectures import BackboneNetworkHandler
 from models.models import PrototypicalNetworkModel
-from utils.training_utils import fit_episode, evaluate_model, sliding_average, find_optimal_threshold_for_testing, evaluate_with_threshold
+from utils.training_utils import fit_episode, evaluate_model, sliding_average
 
 class TaskExecutor:
     def __init__(self, run_config: Dict, n_way: int, n_shot: int, n_query: int,
@@ -266,10 +266,7 @@ class TaskExecutor:
         error_message = None
         best_model_state = None
         
-        # Initialize threshold variables outside try block to avoid scope issues
-        optimal_threshold = None
-        threshold_accuracy = None
-        threshold_results = []
+
 
         try:
             self.setup_pipeline()
@@ -279,20 +276,7 @@ class TaskExecutor:
                print("No best model from validation was found. Using model from the final episode.")
                best_model_state = self.proto_model.state_dict()
             
-            if best_model_state and self.val_loader_for_early_stopping:
-                print("\n--- Executor: Finding Optimal Threshold ---")
-                self.proto_model.load_state_dict(best_model_state)
-                threshold_data = find_optimal_threshold_for_testing(
-                    model=self.proto_model,
-                    validation_loader=self.val_loader_for_early_stopping,
-                    device=self.device
-                )
-                optimal_threshold = threshold_data.get('optimal_threshold', 0.0)
-                threshold_accuracy = threshold_data.get('best_accuracy', 0.0)
-                threshold_results = threshold_data.get('all_results', [])
-                
-                print(f"Optimal threshold: {optimal_threshold:.4f}")
-                print(f"Expected accuracy with threshold: {threshold_accuracy:.4f}")
+
 
             if best_model_state and self.model_save_path:
                 os.makedirs(self.model_save_path, exist_ok=True)
@@ -304,9 +288,6 @@ class TaskExecutor:
     
                 model_package = {
                     'model_state_dict': best_model_state,
-                    'optimal_threshold': optimal_threshold,
-                    'threshold_accuracy': threshold_accuracy,
-                    'threshold_results': threshold_results,
                     'model_config': {
                         'backbone': self.backbone_name,
                         'n_way': self.n_way,
@@ -324,7 +305,7 @@ class TaskExecutor:
                 }
                 
                 torch.save(model_package, full_path)
-                print(f"Complete model package (with threshold) saved to: {full_path}")
+                print(f"Complete model package saved to: {full_path}")
 
             if best_model_state:
                 print("\n--- Executor: Evaluating best model on test set (image mode) ---")
@@ -358,19 +339,7 @@ class TaskExecutor:
                         )
                         
             
-                        if optimal_threshold is not None and optimal_threshold > 0:
-                            print(f"Applying optimal threshold {optimal_threshold:.4f} to final test evaluation")
-                            evaluation_metrics = evaluate_with_threshold(
-                                model=self.proto_model,
-                                data_loader=final_test_loader,
-                                device=self.device,
-                                n_way=self.n_way,
-                                threshold_value=optimal_threshold,
-                                threshold_type='confidence'
-                            )
-                        else:
-                            print("No optimal threshold found, using standard evaluation")
-                            evaluation_metrics = evaluate_model(self.proto_model, final_test_loader, self.device, self.n_way)
+                        evaluation_metrics = evaluate_model(self.proto_model, final_test_loader, self.device, self.n_way)
                     except ValueError as e:
                         print(f"Error creating sampler/loader for final test evaluation: {e}. Skipping final evaluation.")
                         error_message = error_message + f" | Final Test Eval Error: {str(e)}" if error_message else f"Final Test Eval Error: {str(e)}"
@@ -404,10 +373,7 @@ class TaskExecutor:
             "optimal_val_episode": optimal_val_episode,
             "best_val_accuracy": best_val_acc_from_training,
             "backbone": self.backbone_name,
-            "error": error_message,
-            "optimal_threshold": optimal_threshold,
-            "threshold_accuracy": threshold_accuracy,
-            "threshold_results": threshold_results
+            "error": error_message
         }
         print(f"\n--- Executor: Experiment Summary for {os.path.basename(self.config['dataset_path'])} ---")
         print(f"    Final Test Accuracy: {result['accuracy']:.2f}%")

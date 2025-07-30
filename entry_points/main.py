@@ -105,10 +105,7 @@ def main():
                 "optimal_val_episode": 0,
                 "best_val_accuracy": 0.0,
                 "backbone": BACKBONE_TO_USE, 
-                "error": str(e),
-                "optimal_threshold": None,
-                "threshold_accuracy": None,
-                "threshold_results": []
+                "error": str(e)
             })
         
     print('\n=== EXPERIMENT RESULTS ===')
@@ -131,28 +128,6 @@ def main():
                 print(f"    Class {i}: {row}")
         else:
             print(f"  Confusion Matrix: Not available")
-        
-        if res.get('optimal_threshold') is not None:
-            print(f"  Optimal Threshold: {res.get('optimal_threshold'):.4f}")
-            print(f"  Threshold Accuracy: {res.get('threshold_accuracy', 0.0):.4f}")
-            
-            if res.get('acceptance_rate') is not None:
-                print(f"  Final Test with Threshold:")
-                print(f"    Acceptance Rate: {res.get('acceptance_rate', 0.0):.1f}%")
-                print(f"    Samples Used: {res.get('accepted_samples', 0)}/{res.get('total_samples', 0)}")
-                print(f"    Rejected: {res.get('rejected_samples', 0)} samples")
-            
-            # Show acceptance rates for different thresholds
-            threshold_results = res.get('threshold_results', [])
-            if threshold_results:
-                print(f"  Threshold Analysis:")
-                # Show a few key thresholds
-                for i in [0, len(threshold_results)//4, len(threshold_results)//2, 3*len(threshold_results)//4, -1]:
-                    if 0 <= i < len(threshold_results):
-                        tr = threshold_results[i]
-                        print(f"    Threshold {tr['threshold']:.2f}: {tr['accuracy']:.3f} acc, {tr['acceptance_rate']:.3f} accept rate")
-        else:
-            print(f"  Optimal Threshold: Not calculated")
             
         if res.get('error'):
             print(f"  Error: {res.get('error')}")
