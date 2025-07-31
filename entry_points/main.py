@@ -6,11 +6,9 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from config.env file
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# Load environment configuration
 load_dotenv(os.path.join(project_root, 'config.env'))
 
 from core.executor import TaskExecutor
@@ -27,7 +25,6 @@ def set_seeds(seed_value: int, device_type: str):
         torch.backends.cudnn.benchmark = False
 
 def main():
-    # Load configuration from environment variables with fallback defaults
     BASE_DATASET_PATH = os.getenv('BASE_DATASET_PATH', r"D:\IIT\Final Year Project\2025 Project\Final Datasets\Datasets")
     DATASET_NAMES = os.getenv('DATASET_NAMES', 'Combined_Balanced_All_Equal_Groups').split(',')
     
@@ -57,11 +54,8 @@ def main():
 
     all_experiment_results = []
 
-    print(f"Starting experiments - Device: {base_run_config['device']}, Backbone: {BACKBONE_TO_USE}")
-
     for dataset_name in DATASET_NAMES:
         current_dataset_path = os.path.join(BASE_DATASET_PATH, dataset_name)
-        print(f"\nProcessing dataset: {dataset_name}")
         
         run_specific_config = base_run_config.copy()
         run_specific_config['dataset_path'] = current_dataset_path        
@@ -91,7 +85,7 @@ def main():
             result['requested_episodes'] = MAX_N_TRAIN_EPISODES
             result['backbone'] = BACKBONE_TO_USE
             all_experiment_results.append(result)
-            print(f"Experiment completed - Episodes: {result.get('actual_episodes_run', 'N/A')}")
+
         except Exception as e:
             print(f"ERROR in experiment: {e}")
             import traceback
@@ -108,30 +102,8 @@ def main():
                 "error": str(e)
             })
         
-    print('\n=== EXPERIMENT RESULTS ===')
-    for res in all_experiment_results:
-        dataset_name = res.get('dataset_name_for_plot', 'Unknown')
-        print(f"\nDataset: {dataset_name}")
-        print(f"  Episodes Run: {res.get('actual_episodes_run', 'N/A')}")
-        if res.get('optimal_val_episode', 0) > 0:
-             print(f"  Best Validation: {res.get('best_val_accuracy', 0.0):.2f}% at episode {res.get('optimal_val_episode')}")
-        print(f"  Test Accuracy: {res.get('accuracy', 0.0):.2f}%")
-        print(f"  F1 Score: {res.get('f1_score', 0.0):.2f}%")
-        print(f"  Precision: {res.get('precision', 0.0):.2f}%")
-        print(f"  Recall: {res.get('recall', 0.0):.2f}%")
-        print(f"  Time: {res.get('time', 0.0):.2f}s")
-        
-        confusion_matrix = res.get('confusion_matrix')
-        if confusion_matrix is not None:
-            print(f"  Confusion Matrix:")
-            for i, row in enumerate(confusion_matrix):
-                print(f"    Class {i}: {row}")
-        else:
-            print(f"  Confusion Matrix: Not available")
-            
-        if res.get('error'):
-            print(f"  Error: {res.get('error')}")
 
+        
     if all_experiment_results:
         print("\nGenerating plots...")
         plot_results(all_experiment_results, plot_type="all_metrics_per_dataset")

@@ -93,9 +93,7 @@ class DatasetManager:
         return writers
 
     def get_train_test_writers(self) -> Tuple[List[str], List[str]]:
-        print(f"Loading writers from: {self.dataset_path}")
         writers = self._load_writers_from_path()
-        print(f"Found {len(writers)} writers in total.")
         if self.seed is not None:
              random.seed(self.seed)
         random.shuffle(writers)
@@ -103,7 +101,7 @@ class DatasetManager:
         n_train = int(n_total * self.train_ratio)
         train_writers = writers[:n_train]
         test_writers = writers[n_train:]
-        print(f"Split: {len(train_writers)} train, {len(test_writers)} test writers.")
+
         return train_writers, test_writers
 
     def get_writer_dataset(self, writers_list: List[str], transform: Optional[transforms.Compose], 

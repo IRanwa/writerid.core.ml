@@ -1,6 +1,6 @@
 import torch
 from torch import nn, optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 import time
 import os
@@ -94,8 +94,7 @@ class TaskExecutor:
         except ValueError as e:
             raise RuntimeError(f"Error creating WriterDataset instances: {e}") from e
         
-        print(f"Train set: {len(train_set)} images for {len(train_writers)} writers.")
-        print(f"Test set: {len(test_set)} images for {len(test_writers)} writers.")
+
 
         try:
             train_sampler = EpisodicTaskSampler(train_set, self.n_way, self.n_shot, self.n_query, self.n_training_episodes)
@@ -123,8 +122,7 @@ class TaskExecutor:
         if not all([self.proto_model, self.train_loader, self.optimizer, self.criterion, self.val_loader_for_early_stopping]):
             raise RuntimeError("Pipeline not set up. Call setup_pipeline() first.")
 
-        print(f"\n--- Executor: Starting Training (Max: {self.n_training_episodes} episodes) ---")
-        print(f"Early stopping: Patience={self.early_stopping_patience} checks (1 check per {self.evaluation_interval} episodes).")
+
 
         all_loss: List[float] = []
         log_update_frequency = 10
@@ -176,86 +174,16 @@ class TaskExecutor:
                         patience_counter += 1
 
                     if patience_counter >= self.early_stopping_patience:
-                        print(f"\nEarly stopping triggered at episode {actual_episodes_run}.")
+                
                         break
         
         if best_model_state_dict is not None:
             self.proto_model.load_state_dict(best_model_state_dict)
         
-        print("--- Executor: Training Finished ---")
+
         return all_loss, actual_episodes_run, optimal_episode_for_val_acc, best_val_accuracy, best_model_state_dict
 
-    def pre_compute_and_save_test_embeddings(self, model_state_dict: Dict) -> str:
-        """Pre-computes and saves embeddings for the entire test set."""
-        print("\n--- Executor: Pre-computing test set embeddings ---")
-        if not self.embeddings_save_path:
-            raise ValueError("embeddings_save_path must be provided to save embeddings.")
 
-        self.proto_model.load_state_dict(model_state_dict)
-        self.proto_model.to(self.device)
-        self.proto_model.eval()
-
-        _, test_writers = self.dataset_manager.get_train_test_writers()
-        test_transform = self.preprocessor.get_test_transform()
-
-        class SimpleImageDataset(Dataset):
-            def __init__(self, root_path, writers, transform):
-                self.paths = []
-                for writer_id in writers:
-                    writer_dir = os.path.join(root_path, writer_id)
-                    for img_file in os.listdir(writer_dir):
-                        self.paths.append(os.path.join(writer_dir, img_file))
-                self.transform = transform
-            def __len__(self):
-                return len(self.paths)
-            def __getitem__(self, idx):
-                img_path = self.paths[idx]
-                image = Image.open(img_path).convert('L')
-                return self.transform(image), img_path
-
-        image_dataset = SimpleImageDataset(self.config['dataset_path'], test_writers, test_transform)
-        image_loader = DataLoader(image_dataset, batch_size=32, num_workers=self.config['num_workers'])
-
-        with torch.no_grad():
-            for images, paths in tqdm(image_loader, desc="Generating Embeddings"):
-                images = images.to(self.device)
-                embeddings = self.proto_model.backbone(images)
-                
-                for i, full_path in enumerate(paths):
-                    rel_path = os.path.relpath(full_path, self.config['dataset_path'])
-                    embedding_save_path = os.path.join(self.embeddings_save_path, rel_path)
-                    embedding_save_path = os.path.splitext(embedding_save_path)[0] + ".pt"
-                    
-                    os.makedirs(os.path.dirname(embedding_save_path), exist_ok=True)
-                    torch.save(embeddings[i].cpu(), embedding_save_path)
-        
-        print(f"All test embeddings saved to: {self.embeddings_save_path}")
-        return self.embeddings_save_path
-
-    def evaluate_with_embeddings(self, embeddings_path: str) -> Dict:
-        """Evaluates the model using pre-computed embeddings."""
-        print("\n--- Executor: Evaluating with pre-computed embeddings ---")
-        _, test_writers = self.dataset_manager.get_train_test_writers()
-
-        try:
-            embedding_dataset = self.dataset_manager.get_writer_dataset(
-                writers_list=test_writers,
-                transform=None,
-                image_size=self.config['image_size'],
-                mode='embeddings',
-                dataset_path_override=embeddings_path 
-            )
-            
-            test_sampler = EpisodicTaskSampler(embedding_dataset, self.n_way, self.n_shot, self.n_query, self.n_evaluation_tasks)
-            test_loader = DataLoader(
-                embedding_dataset, batch_sampler=test_sampler, num_workers=self.config['num_workers'],
-                pin_memory=(self.device.type == 'cuda'), collate_fn=test_sampler.episodic_collate_fn
-            )
-        except (ValueError, FileNotFoundError) as e:
-             raise RuntimeError(f"Error creating dataset/sampler for embeddings: {e}") from e
-
-        metrics_dict = evaluate_model(test_loader, self.device, self.n_way)
-        return metrics_dict
 
     def run_single_experiment(self) -> Dict:
         start_time = time.perf_counter()
@@ -273,7 +201,7 @@ class TaskExecutor:
             _, actual_episodes_run, optimal_val_episode, best_val_acc_from_training, best_model_state = self.train()
             
             if best_model_state is None and actual_episodes_run > 0:
-               print("No best model from validation was found. Using model from the final episode.")
+       
                best_model_state = self.proto_model.state_dict()
             
 
@@ -305,10 +233,10 @@ class TaskExecutor:
                 }
                 
                 torch.save(model_package, full_path)
-                print(f"Complete model package saved to: {full_path}")
+        
 
             if best_model_state:
-                print("\n--- Executor: Evaluating best model on test set (image mode) ---")
+        
                 self.proto_model.load_state_dict(best_model_state)
                 self.proto_model.eval()
 
@@ -346,7 +274,7 @@ class TaskExecutor:
                         evaluation_metrics = {"accuracy": 0.0, "f1": 0.0, "precision": 0.0, "recall": 0.0, "confusion_matrix": None}
 
             else:
-                print("Skipping final evaluation as no model was trained or selected.")
+                pass
 
         except (FileNotFoundError, ValueError, RuntimeError, AttributeError) as e:
             error_message = str(e)

@@ -15,7 +15,6 @@ from typing import Dict, Optional
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Load environment configuration
 project_root = Path(__file__).parent.parent
 load_dotenv(os.path.join(project_root, 'config.env'))
 
@@ -29,78 +28,38 @@ class TaskProcessor:
         self.sampling_seed = int(os.getenv('SAMPLING_SEED', '42'))
 
     def _get_dataset_status(self, task_id: str) -> Optional[Dict]:
-        """Get dataset status from API"""
         return self.api_client.get_dataset_status(task_id)
 
     def _update_dataset_status(self, dataset_id: str, status: int, message: str = "") -> bool:
-        """Update dataset status via API"""
         return self.api_client.update_dataset_status(dataset_id, status, message)
 
     def _extract_model_id(self, model_container_name: str) -> Optional[str]:
-        """
-        Extract model ID from container name by removing 'model-' prefix.
-        
-        Args:
-            model_container_name: Container name like 'model-1', 'model-123', 'model-70fb5fb0-9b8a-4b9f-9f6f-2cc4e7b11de8', etc.
-            
-        Returns:
-            str: Model ID (e.g., '1', '123', '70fb5fb0-9b8a-4b9f-9f6f-2cc4e7b11de8') or None if invalid format
-        """
         try:
             if model_container_name.startswith('model-'):
                 model_id = model_container_name[6:]  # Remove 'model-' prefix
-                print(f"Extracted model ID '{model_id}' from container name '{model_container_name}'")
+        
                 return model_id
             else:
-                print(f"Warning: Container name '{model_container_name}' does not follow 'model-{{id}}' format")
+        
                 return None
         except Exception as e:
-            print(f"Error extracting model ID from '{model_container_name}': {e}")
+    
             return None
 
     def _get_model_status(self, model_id: str) -> Optional[Dict]:
-        """
-        Get current model status from API.
-        
-        Args:
-            model_id: The model ID to check
-            
-        Returns:
-            Dict: Model status information or None if failed
-        """
         return self.api_client.get_model_status(model_id)
 
     def _update_model_status(self, model_id: str, status: int, message: str = "") -> bool:
-        """
-        Update model status via API.
-        
-        Args:
-            model_id: The model ID to update
-            status: Status code (0=Created, 1=Processing, 2=Completed, 3=Failed, 4=Reconfigure)
-            message: Optional status message
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
         return self.api_client.update_model_status(model_id, status, message)
 
     def _can_start_training(self, model_id: str) -> bool:
-        """
-        Check if a model can start training based on its current status.
-        
-        Args:
-            model_id: The model ID to check
-            
-        Returns:
-            bool: True if training can start, False otherwise
-        """
         current_status = self._get_model_status(model_id)
         if not current_status:
             print(f"Could not retrieve current status for model {model_id} - training blocked for safety")
             return False  # Block training if status check fails for safety
         
         status_value = current_status.get('status', None)
-        print(f"Current model {model_id} status: {status_value} (type: {type(status_value)})")
+
         
         # Handle both string and numeric status values
         # Valid statuses for training: Created (0) or Reconfigure (4)
@@ -114,33 +73,20 @@ class TaskProcessor:
         )
         
         if is_valid_status:
-            print(f"Model {model_id} is in '{status_value}' status - training can proceed")
+    
             return True
         else:
-            print(f"Model {model_id} is in '{status_value}' status - training should not proceed")
-            print(f"Valid statuses for training: {valid_string_statuses} or {valid_numeric_statuses}")
+            
             return False
 
     def set_sampling_strategy(self, strategy: str = "files_per_writer", multiplier: float = 3.0, seed: int = 42):
-        """
-        Configure the dataset sampling strategy.
-        
-        Args:
-            strategy: 'files_per_writer' or 'percentage'  
-            multiplier: Multiplier for (n_shot + n_query) calculation or percentage 0.0-1.0 (for 'percentage')
-            seed: Random seed for reproducible sampling
-        """
         self.sampling_strategy = strategy
         self.sampling_multiplier = multiplier
         self.sampling_seed = seed
-        print(f"Sampling strategy set to: {strategy} with multiplier {multiplier}, seed {seed}")
+
 
     def analyze_dataset(self, task_id: str, container_name: str):
-        """
-        API-based dataset analysis method.
-        Processes dataset analysis requests using task ID and container name.
-        """
-        print(f"Starting dataset analysis for task ID: {task_id}, container: {container_name}")
+
         
         try:
             analysis_result = self._perform_dataset_analysis(container_name)
@@ -150,7 +96,7 @@ class TaskProcessor:
                 update_success = self._update_dataset_status(task_id, 2, success_message)
                 
                 if update_success:
-                    print("Dataset analysis completed and API status updated successfully")
+                    pass
                 else:
                     print("Analysis completed but failed to update API status")
                     
@@ -167,15 +113,6 @@ class TaskProcessor:
             return None
 
     def _perform_dataset_analysis(self, container_name: str):
-        """
-        Performs the actual dataset analysis on the Azure Blob Storage container.
-        
-        Args:
-            container_name: Name of the Azure Blob Storage container
-            
-        Returns:
-            Dict: Analysis results or None if failed
-        """
         try:
             container_client = self.blob_service_client.get_container_client(container_name)
             
@@ -212,7 +149,7 @@ class TaskProcessor:
             analysis_json = json.dumps(analysis, indent=4)
             
             analysis_blob_client.upload_blob(analysis_json, overwrite=True)
-            print(f"Uploaded analysis to {container_name}/{analysis_blob_name}")
+    
 
             return analysis
         
@@ -224,21 +161,8 @@ class TaskProcessor:
                          max_files_per_writer: Optional[int] = None, 
                          download_percentage: Optional[float] = None,
                          random_seed: Optional[int] = None) -> bool:
-        """
-        Downloads a subset of the dataset from Azure Blob Storage to a local directory.
-        
-        Args:
-            container_name: Name of the Azure Blob Storage container
-            local_path: Local directory path to download to
-            max_files_per_writer: Maximum number of files to download per writer (optional)
-            download_percentage: Percentage of total files to download (0.0-1.0, optional)
-            random_seed: Random seed for reproducible sampling (optional)
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
         try:
-            print(f"Downloading dataset from container '{container_name}' to local path '{local_path}'...")
+    
             
             # Set random seed if provided
             if random_seed is not None:
@@ -281,7 +205,7 @@ class TaskProcessor:
                         # Randomly sample files for this writer
                         selected_files = random.sample(files, max_files_per_writer)
                         files_to_download.extend(selected_files)
-                        print(f"Writer {writer_id}: Selected {max_files_per_writer} out of {len(files)} files")
+                
                         
             elif download_percentage is not None:
                 # Download a percentage of total files
@@ -290,7 +214,7 @@ class TaskProcessor:
                 if num_files_to_download == 0:
                     num_files_to_download = 1  # Download at least one file
                 files_to_download = random.sample(all_files, min(num_files_to_download, len(all_files)))
-                print(f"Selected {len(files_to_download)} out of {len(all_files)} files ({download_percentage*100:.1f}%)")
+        
                 
             else:
                 # Default: download all files (original behavior)
@@ -316,13 +240,13 @@ class TaskProcessor:
                 downloaded_count += 1
                 
                 if downloaded_count % 10 == 0:
-                    print(f"Downloaded {downloaded_count} files...")
+                    pass
             
             print(f"Dataset download completed. Downloaded {downloaded_count} files, skipped {skipped_count} files.")
             
             # Show sampling summary
             if max_files_per_writer is not None:
-                print(f"Applied per-writer limit: {max_files_per_writer} files per writer")
+                pass
             elif download_percentage is not None:
                 print(f"Applied percentage sampling: {download_percentage*100:.1f}% of total files")
             
@@ -350,9 +274,6 @@ class TaskProcessor:
             return False
 
     def train_model(self, dataset_container_name, model_container_name):
-        """
-        Trains a model using the specified dataset and saves the results.
-        """
         # Extract model ID and check if training can proceed
         model_id = self._extract_model_id(model_container_name)
         local_dataset_path = None  # Initialize to prevent NameError in finally block
@@ -596,7 +517,6 @@ class TaskProcessor:
                     print(f"Warning: Failed to clean up {local_dataset_path}: {cleanup_error}") 
 
     def _chunked_upload(self, blob_client, file_path, chunk_size=None):
-        """Upload a file in chunks for better reliability with large files."""
         try:
             if chunk_size is None:
                 chunk_size = int(os.getenv('CHUNK_SIZE_MB', '4')) * 1024 * 1024

@@ -92,7 +92,6 @@ def evaluate_model(
     return calculate_metrics(correct_predictions, total_predictions, all_true_labels_for_epoch, all_pred_labels_for_epoch, n_way_for_metrics, len(data_loader))
 
 def evaluate_model_with_embeddings(data_loader: DataLoader, device: torch.device, n_way: int) -> Dict:
-    """A separate evaluation function that works with pre-computed embeddings."""
     total_predictions = 0
     correct_predictions = 0
     all_true_labels_for_epoch, all_pred_labels_for_epoch = [], []
@@ -126,7 +125,6 @@ def evaluate_model_with_embeddings(data_loader: DataLoader, device: torch.device
     return calculate_metrics(correct_predictions, total_predictions, all_true_labels_for_epoch, all_pred_labels_for_epoch, n_way, len(data_loader))
 
 def calculate_metrics(correct_preds, total_preds, true_labels, pred_labels, n_way, num_tasks):
-    """Helper function to calculate and print metrics."""
     metrics = {"accuracy": 0.0, "f1": 0.0, "precision": 0.0, "recall": 0.0, "confusion_matrix": None}
     if total_preds == 0:
         print("Evaluation completed, but no predictions were made.")
@@ -150,6 +148,3 @@ def calculate_metrics(correct_preds, total_preds, true_labels, pred_labels, n_wa
 def sliding_average(value_list: List[float], window: int) -> float:
     if not value_list: return 0.0
     return np.asarray(value_list[-min(len(value_list), window):]).mean()
-
-
-

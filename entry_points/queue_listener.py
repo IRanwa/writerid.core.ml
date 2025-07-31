@@ -53,17 +53,7 @@ class QueueMessageListener:
             )
             self.task_processor = TaskProcessor(self.connection_string)
             
-            # Dataset sampling strategy is now configured via environment variables in config.env
-            # Sampling is calculated based on (n_shot + n_query) * multiplier for better episode formation
-            # You can override the settings by calling:
-            # self.task_processor.set_sampling_strategy("files_per_writer", 3.0, seed=42)  # 3x multiplier
-            # self.task_processor.set_sampling_strategy("percentage", 0.25, seed=42)       # 25% of files
-            
-            # Current configuration loaded from environment:
-            print(f"Dataset sampling configured from config.env: {self.task_processor.sampling_strategy}, multiplier = {self.task_processor.sampling_multiplier}, seed = {self.task_processor.sampling_seed}")
-            
-            # Uncomment to override environment settings:
-            # self.task_processor.set_sampling_strategy("files_per_writer", 4.0, seed=42)  # 4x multiplier
+
         except Exception as e:
             print(f"Failed to initialize clients: {e}")
             raise
@@ -131,13 +121,7 @@ class QueueMessageListener:
                 print("Invalid message format: missing container_name")
                 return
             
-            print(f"Processing dataset analysis: {task_id}")
-            result = self.task_processor.analyze_dataset(task_id, container_name)
-            
-            if result:
-                print("Dataset analysis completed successfully")
-            else:
-                print("Dataset analysis failed")
+            self.task_processor.analyze_dataset(task_id, container_name)
                 
         except Exception as e:
             print(f"Error in dataset analysis: {str(e)}")
@@ -171,6 +155,7 @@ class QueueMessageListener:
                     
                 for message in messages:
                     message_processed = False
+                    print(f"Queue message received - ID: {message.id}")
                     
                     try:
                         message_content = self._decode_message_content(message.content)
@@ -178,22 +163,15 @@ class QueueMessageListener:
 
                         if task == "analyze_dataset":
                             self.handle_analyze_dataset(message_content)
+                            print(f"Dataset analysis completed")
                             message_processed = True
 
                         elif task == "train":
                             dataset_container_name = message_content.get("dataset_container_name")
                             model_container_name = message_content.get("model_container_name")
                             if dataset_container_name and model_container_name:
-                                print(f"Starting model training: {dataset_container_name} -> {model_container_name}")
-                                
-                                # Model status tracking is handled automatically by TaskProcessor:
-                                # - Extracts model ID from model_container_name (e.g., 'model-1' -> '1')
-                                # - Updates status to Processing (1) at start
-                                # - Updates status to Completed (2) on success or Failed (3) on error
-                                # - API calls made to GET api/external/models/{id}/status (check) and PUT api/external/models/status (update)
-                                
                                 result = self.task_processor.train_model(dataset_container_name, model_container_name)
-                                print("Model training completed")
+                                print(f"Model training completed")
                                 message_processed = True
                             else:
                                 print("Missing container names in train message")
@@ -204,6 +182,7 @@ class QueueMessageListener:
                         if message_processed:
                             try:
                                 self.queue_client.delete_message(message)
+                                print(f"Message completed and deleted")
                             except Exception as delete_error:
                                 print(f"Failed to delete message: {delete_error}")
 
@@ -215,7 +194,7 @@ class QueueMessageListener:
                             print(f"Failed to delete malformed message: {delete_error}")
                             
                     except Exception as processing_error:
-                        print(f"Error processing message: {processing_error}")
+                        print(f"Message processing failed: {processing_error}")
                         traceback.print_exc()
                 
                 time.sleep(5)
